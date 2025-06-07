@@ -1,0 +1,15 @@
+# #!/usr/bin/env -S nix shell nixpkgs#bash nixpkgs#go nixpkgs#jq --impure --command bash
+
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+NAME=defaults2nix
+VERSION=0.1
+
+go mod tidy
+go build -o tmp.exe
+BIN_HASH=$(nix hash file tmp.exe)
+JSON="{\"bin-hash\": \"$BIN_HASH\", \"version\": \"$VERSION\", \"name\": \"$NAME\"}"
+jq -n "$JSON" > nixpkg.json
+nix flake update
