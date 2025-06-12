@@ -34,3 +34,4 @@ go.work.sum
 output.nix
 
 result/
+tmp/

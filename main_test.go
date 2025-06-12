@@ -100,20 +100,35 @@ func TestDictValue_ToNix(t *testing.T) {
 		{
 			"Dict with quoted keys",
 			map[string]Value{
-				"key with spaces": StringValue{Value: "value"},
-				"key-with-dashes": StringValue{Value: "value2"},
+				"0":          StringValue{Value: "numeric key"},
+				"with-dash":  StringValue{Value: "dashed key"},
+				"with space": StringValue{Value: "spaced key"},
 			},
-			[]string{"key with spaces", "key-with-dashes"},
-			"{\n  \"key with spaces\" = \"value\";\n  \"key-with-dashes\" = \"value2\";\n}",
+			[]string{"0", "with-dash", "with space"},
+			"{\n  \"0\" = \"numeric key\";\n  \"with-dash\" = \"dashed key\";\n  \"with space\" = \"spaced key\";\n}",
 		},
 		{
-			"Dict with skip value",
+			"Dict with skip values",
 			map[string]Value{
-				"normalKey": StringValue{Value: "value"},
-				"binaryKey": SkipValue{},
+				"key1": StringValue{Value: "hello"},
+				"skip": SkipValue{},
+				"key2": StringValue{Value: "world"},
 			},
-			[]string{"normalKey", "binaryKey"},
-			"{\n  normalKey = \"value\";\n}",
+			[]string{"key1", "skip", "key2"},
+			"{\n  key1 = \"hello\";\n  key2 = \"world\";\n}",
+		},
+		{
+			"Nested dict",
+			map[string]Value{
+				"outer": DictValue{
+					Values: map[string]Value{
+						"inner": StringValue{Value: "nested"},
+					},
+					Order: []string{"inner"},
+				},
+			},
+			[]string{"outer"},
+			"{\n  outer = {\n    inner = \"nested\";\n  };\n}",
 		},
 	}
 
@@ -134,75 +149,26 @@ func TestParseValue(t *testing.T) {
 		input    string
 		expected Value
 	}{
-		{
-			"String value",
-			"hello",
+		{"String value", "hello", StringValue{Value: "hello"}},
+		{"Quoted string", "\"hello world\"", StringValue{Value: "hello world"}},
+		{"Empty array", "()", ArrayValue{Values: []Value{}}},
+		{"Array with values", "(hello, world)", ArrayValue{Values: []Value{
 			StringValue{Value: "hello"},
-		},
-		{
-			"Quoted string",
-			"\"hello world\"",
-			StringValue{Value: "hello world"},
-		},
-		{
-			"Simple array",
-			"(item1, item2)",
-			ArrayValue{Values: []Value{
-				StringValue{Value: "item1"},
-				StringValue{Value: "item2"},
-			}},
-		},
-		{
-			"Simple dict",
-			"{key1 = value1; key2 = value2;}",
-			DictValue{
-				Values: map[string]Value{
-					"key1": StringValue{Value: "value1"},
-					"key2": StringValue{Value: "value2"},
-				},
-				Order: []string{"key1", "key2"},
-			},
-		},
-		{
-			"Binary data (should return SkipValue)",
-			"{length = 256, bytes = 0x89504e47 0d0a1a0a;}",
-			SkipValue{},
-		},
+			StringValue{Value: "world"},
+		}}},
+		{"Empty dict", "{}", DictValue{Values: map[string]Value{}, Order: []string{}}},
+		{"Simple dict", "{key = value;}", DictValue{
+			Values: map[string]Value{"key": StringValue{Value: "value"}},
+			Order:  []string{"key"},
+		}},
+		{"Binary data", "{length = 256; bytes = 0x89504e47;}", SkipValue{}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := parseValue(tt.input)
-
-			switch expected := tt.expected.(type) {
-			case StringValue:
-				if sv, ok := result.(StringValue); ok {
-					if sv.Value != expected.Value {
-						t.Errorf("parseValue() StringValue = %q, want %q", sv.Value, expected.Value)
-					}
-				} else {
-					t.Errorf("parseValue() type = %T, want StringValue", result)
-				}
-			case SkipValue:
-				if _, ok := result.(SkipValue); !ok {
-					t.Errorf("parseValue() type = %T, want SkipValue", result)
-				}
-			case ArrayValue:
-				if av, ok := result.(ArrayValue); ok {
-					if len(av.Values) != len(expected.Values) {
-						t.Errorf("parseValue() ArrayValue length = %d, want %d", len(av.Values), len(expected.Values))
-					}
-				} else {
-					t.Errorf("parseValue() type = %T, want ArrayValue", result)
-				}
-			case DictValue:
-				if dv, ok := result.(DictValue); ok {
-					if len(dv.Values) != len(expected.Values) {
-						t.Errorf("parseValue() DictValue length = %d, want %d", len(dv.Values), len(expected.Values))
-					}
-				} else {
-					t.Errorf("parseValue() type = %T, want DictValue", result)
-				}
+			if !compareValues(result, tt.expected) {
+				t.Errorf("parseValue(%q) = %v, want %v", tt.input, result, tt.expected)
 			}
 		})
 	}
@@ -218,6 +184,11 @@ func TestConvertDefaults_SimpleTest(t *testing.T) {
     ExtensionsEnabled = 1;
 }`
 
+	result, err := convertDefaults(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("convertDefaults() error = %v", err)
+	}
+
 	expected := `{
   AllowJavaScriptFromAppleEvents = true;
   AutoFillCreditCardData = true;
@@ -226,11 +197,6 @@ func TestConvertDefaults_SimpleTest(t *testing.T) {
   HomePage = "https://www.apple.com/startpage/";
   ExtensionsEnabled = true;
 }`
-
-	result, err := convertDefaults(strings.NewReader(input))
-	if err != nil {
-		t.Fatalf("convertDefaults() error = %v", err)
-	}
 
 	if result != expected {
 		t.Errorf("convertDefaults() = %q, want %q", result, expected)
@@ -252,26 +218,23 @@ func TestConvertDefaults_BinaryData(t *testing.T) {
 		t.Fatalf("convertDefaults() error = %v", err)
 	}
 
-	// Binary data should be skipped
-	if strings.Contains(result, "BinaryData") {
-		t.Error("convertDefaults() should skip binary data, but BinaryData found in result")
-	}
-	if strings.Contains(result, "MoreBinaryData") {
-		t.Error("convertDefaults() should skip binary data, but MoreBinaryData found in result")
+	// Verify binary data is skipped completely
+	if strings.Contains(result, "BinaryData") || strings.Contains(result, "MoreBinaryData") {
+		t.Error("Binary data should be completely skipped from output")
 	}
 
-	// Other settings should be present
-	if !strings.Contains(result, "TestSetting = true") {
-		t.Error("convertDefaults() should include TestSetting")
+	// Verify other settings are preserved
+	expectedContains := []string{
+		"TestSetting = true;",
+		"HomePage = \"https://example.com\";",
+		"AnotherSetting = \"value\";",
+		"LastSetting = false;",
 	}
-	if !strings.Contains(result, "HomePage = \"https://example.com\"") {
-		t.Error("convertDefaults() should include HomePage")
-	}
-	if !strings.Contains(result, "AnotherSetting = \"value\"") {
-		t.Error("convertDefaults() should include AnotherSetting")
-	}
-	if !strings.Contains(result, "LastSetting = false") {
-		t.Error("convertDefaults() should include LastSetting")
+
+	for _, expected := range expectedContains {
+		if !strings.Contains(result, expected) {
+			t.Errorf("Expected result to contain: %s\nGot: %s", expected, result)
+		}
 	}
 }
 
@@ -279,16 +242,6 @@ func TestConvertDefaults_ComplexSafariExample(t *testing.T) {
 	input := `{
     AllowJavaScriptFromAppleEvents = 1;
     AutoFillCreditCardData = 1;
-    ExtensionsEnabled = 1;
-    "ExtensionsToolbarConfiguration BrowserStandaloneTabBarToolbarIdentifier-v2" = {
-        OrderedToolbarItemIdentifiers = (
-            CombinedSidebarTabGroupToolbarIdentifier,
-            SidebarSeparatorToolbarItemIdentifier,
-            BackForwardToolbarIdentifier
-        );
-        UserRemovedToolbarItemIdentifiers = (
-        );
-    };
     FrequentlyVisitedSitesCache = (
         {
             Score = "33.52108001708984";
@@ -302,6 +255,7 @@ func TestConvertDefaults_ComplexSafariExample(t *testing.T) {
         }
     );
     customizationSyncServerToken = {length = 293, bytes = 0x62706c69 73743030 d4010203 04050607};
+    ShowStandaloneTabBar = 0;
 }`
 
 	result, err := convertDefaults(strings.NewReader(input))
@@ -309,29 +263,28 @@ func TestConvertDefaults_ComplexSafariExample(t *testing.T) {
 		t.Fatalf("convertDefaults() error = %v", err)
 	}
 
-	// Check that basic values are converted correctly
-	if !strings.Contains(result, "AllowJavaScriptFromAppleEvents = true") {
-		t.Error("convertDefaults() should convert 1 to true")
+	// Test boolean conversions
+	if !strings.Contains(result, "AllowJavaScriptFromAppleEvents = true;") {
+		t.Error("Should convert 1 to true")
+	}
+	if !strings.Contains(result, "ShowStandaloneTabBar = false;") {
+		t.Error("Should convert 0 to false")
 	}
 
-	// Check that quoted keys are handled
-	if !strings.Contains(result, "\"ExtensionsToolbarConfiguration BrowserStandaloneTabBarToolbarIdentifier-v2\"") {
-		t.Error("convertDefaults() should preserve quoted keys")
-	}
-
-	// Check that arrays are converted
-	if !strings.Contains(result, "OrderedToolbarItemIdentifiers = [") {
-		t.Error("convertDefaults() should convert arrays")
-	}
-
-	// Check that nested dictionaries work
+	// Test array of dictionaries
 	if !strings.Contains(result, "FrequentlyVisitedSitesCache = [") {
-		t.Error("convertDefaults() should handle array of dictionaries")
+		t.Error("Should handle array of dictionaries")
+	}
+	if !strings.Contains(result, "Score = 33.5210800170898;") {
+		t.Error("Should handle nested dictionary values")
+	}
+	if !strings.Contains(result, "Title = \"LinkedIn\";") {
+		t.Error("Should handle simple identifiers as strings")
 	}
 
-	// Check that binary data is skipped
+	// Test binary data skipping
 	if strings.Contains(result, "customizationSyncServerToken") {
-		t.Error("convertDefaults() should skip binary data")
+		t.Error("Should skip binary data completely")
 	}
 }
 
@@ -342,29 +295,46 @@ func TestParseArrayElements(t *testing.T) {
 		expected []Value
 	}{
 		{
-			"Simple elements",
-			"item1, item2, item3",
+			"Empty string",
+			"",
+			[]Value{},
+		},
+		{
+			"Single element",
+			"hello",
+			[]Value{StringValue{Value: "hello"}},
+		},
+		{
+			"Multiple elements",
+			"hello, world, test",
 			[]Value{
-				StringValue{Value: "item1"},
-				StringValue{Value: "item2"},
-				StringValue{Value: "item3"},
+				StringValue{Value: "hello"},
+				StringValue{Value: "world"},
+				StringValue{Value: "test"},
 			},
 		},
 		{
-			"Elements with semicolons",
-			"item1;, item2;, item3;",
+			"Elements with quotes",
+			"\"hello world\", test, \"quoted string\"",
 			[]Value{
-				StringValue{Value: "item1"},
-				StringValue{Value: "item2"},
-				StringValue{Value: "item3"},
+				StringValue{Value: "hello world"},
+				StringValue{Value: "test"},
+				StringValue{Value: "quoted string"},
 			},
 		},
 		{
-			"Quoted elements",
-			"\"item 1\", \"item 2\"",
+			"Nested structures",
+			"{key = value;}, (inner, array), simple",
 			[]Value{
-				StringValue{Value: "item 1"},
-				StringValue{Value: "item 2"},
+				DictValue{
+					Values: map[string]Value{"key": StringValue{Value: "value"}},
+					Order:  []string{"key"},
+				},
+				ArrayValue{Values: []Value{
+					StringValue{Value: "inner"},
+					StringValue{Value: "array"},
+				}},
+				StringValue{Value: "simple"},
 			},
 		},
 	}
@@ -373,17 +343,12 @@ func TestParseArrayElements(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := parseArrayElements(tt.input)
 			if len(result) != len(tt.expected) {
-				t.Errorf("parseArrayElements() length = %d, want %d", len(result), len(tt.expected))
+				t.Errorf("parseArrayElements(%q) returned %d elements, want %d", tt.input, len(result), len(tt.expected))
 				return
 			}
-
-			for i, expected := range tt.expected {
-				if sv, ok := result[i].(StringValue); ok {
-					if expectedSv, ok := expected.(StringValue); ok {
-						if sv.Value != expectedSv.Value {
-							t.Errorf("parseArrayElements()[%d] = %q, want %q", i, sv.Value, expectedSv.Value)
-						}
-					}
+			for i, v := range result {
+				if !compareValues(v, tt.expected[i]) {
+					t.Errorf("parseArrayElements(%q)[%d] = %v, want %v", tt.input, i, v, tt.expected[i])
 				}
 			}
 		})
@@ -394,7 +359,53 @@ func TestSkipValue_ToNix(t *testing.T) {
 	sv := SkipValue{}
 	result := sv.ToNix(0)
 	if result != "" {
-		t.Errorf("SkipValue.ToNix() = %q, want empty string", result)
+		t.Errorf("SkipValue.ToNix() = %q, want %q", result, "")
+	}
+}
+
+// Helper function to compare DictValue maps (since maps can't be compared directly with ==)
+func compareDictValues(m1, m2 map[string]Value) bool {
+	if len(m1) != len(m2) {
+		return false
+	}
+	for k, v1 := range m1 {
+		v2, ok := m2[k]
+		if !ok {
+			return false
+		}
+		// Recursively compare Value types
+		if !compareValues(v1, v2) {
+			return false
+		}
+	}
+	return true
+}
+
+// Helper function for deep comparison of Value types
+func compareValues(v1, v2 Value) bool {
+	switch val1 := v1.(type) {
+	case StringValue:
+		val2, ok := v2.(StringValue)
+		return ok && val1.Value == val2.Value
+	case ArrayValue:
+		val2, ok := v2.(ArrayValue)
+		if !ok || len(val1.Values) != len(val2.Values) {
+			return false
+		}
+		for i := range val1.Values {
+			if !compareValues(val1.Values[i], val2.Values[i]) {
+				return false
+			}
+		}
+		return true
+	case DictValue:
+		val2, ok := v2.(DictValue)
+		return ok && compareDictValues(val1.Values, val2.Values)
+	case SkipValue:
+		_, ok := v2.(SkipValue)
+		return ok
+	default:
+		return false
 	}
 }
 
@@ -613,5 +624,215 @@ func TestIntegration_SafariComplexFile(t *testing.T) {
 	// Test binary data skipping
 	if strings.Contains(result, "customizationSyncServerToken") {
 		t.Error("Should skip binary data completely")
+	}
+}
+
+// TestExtractBundleIDs tests the extraction of all top-level keys from parsed values,
+// including bundle IDs, NSGlobalDomain, and custom preference domains
+func TestExtractBundleIDs(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    Value
+		expected []string
+	}{
+		{
+			"Bundle IDs and global domains",
+			DictValue{
+				Values: map[string]Value{
+					"com.apple.Safari":        StringValue{Value: "test"},
+					"com.google.Chrome":       StringValue{Value: "test"},
+					"NSGlobalDomain":          StringValue{Value: "test"},
+					"Custom User Preferences": StringValue{Value: "test"},
+					"loginwindow":             StringValue{Value: "test"},
+					"Apple Global Domain":     StringValue{Value: "test"},
+				},
+				Order: []string{"com.apple.Safari", "com.google.Chrome", "NSGlobalDomain", "Custom User Preferences", "loginwindow", "Apple Global Domain"},
+			},
+			[]string{"com.apple.Safari", "com.google.Chrome", "NSGlobalDomain", "Custom User Preferences", "loginwindow", "Apple Global Domain"},
+		},
+		{
+			"Empty dictionary",
+			DictValue{
+				Values: map[string]Value{},
+				Order:  []string{},
+			},
+			[]string{},
+		},
+		{
+			"Skip binary data",
+			DictValue{
+				Values: map[string]Value{
+					"com.apple.Safari": StringValue{Value: "test"},
+					"binaryData":       SkipValue{},
+					"NSGlobalDomain":   StringValue{Value: "test"},
+				},
+				Order: []string{"com.apple.Safari", "binaryData", "NSGlobalDomain"},
+			},
+			[]string{"com.apple.Safari", "NSGlobalDomain"},
+		},
+		{
+			"Non-dictionary value",
+			StringValue{Value: "not a dict"},
+			[]string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractBundleIDs(tt.input)
+
+			if len(result) != len(tt.expected) {
+				t.Errorf("extractBundleIDs() returned %d keys, want %d", len(result), len(tt.expected))
+			}
+
+			for _, expectedKey := range tt.expected {
+				if _, exists := result[expectedKey]; !exists {
+					t.Errorf("extractBundleIDs() missing expected key: %s", expectedKey)
+				}
+			}
+		})
+	}
+}
+
+// TestSanitizeFilename tests the conversion of domain keys to safe filenames
+// by replacing dots, spaces, and other problematic characters
+func TestSanitizeFilename(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"Bundle ID with dots", "com.apple.Safari", "com-apple-Safari"},
+		{"Quoted bundle ID", "\"com.google.Chrome\"", "com-google-Chrome"},
+		{"NSGlobalDomain", "NSGlobalDomain", "NSGlobalDomain"},
+		{"Space in name", "Custom User Preferences", "Custom_User_Preferences"},
+		{"Mixed characters", "Apple Global Domain", "Apple_Global_Domain"},
+		{"Forward slash", "path/to/something", "path_to_something"},
+		{"Complex name", "\"Extension Config v2\"", "Extension_Config_v2"},
+		{"loginwindow", "loginwindow", "loginwindow"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizeFilename(tt.input)
+			if result != tt.expected {
+				t.Errorf("sanitizeFilename(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestConvertDefaultsWithValue tests the new function that returns both
+// the Nix output string and the parsed Value structure for split functionality
+func TestConvertDefaultsWithValue(t *testing.T) {
+	input := `{
+    "com.apple.Safari" = {
+        HomePage = "https://example.com";
+        ExtensionsEnabled = 1;
+    };
+    NSGlobalDomain = {
+        AppleInterfaceStyle = Dark;
+    };
+}`
+
+	nixOutput, value, err := convertDefaultsWithValue(input)
+	if err != nil {
+		t.Fatalf("convertDefaultsWithValue() error = %v", err)
+	}
+
+	// Test Nix output
+	if !strings.Contains(nixOutput, "com.apple.Safari") {
+		t.Error("Nix output should contain Safari bundle ID")
+	}
+	if !strings.Contains(nixOutput, "NSGlobalDomain") {
+		t.Error("Nix output should contain NSGlobalDomain")
+	}
+
+	// Test returned value structure
+	if dict, ok := value.(DictValue); ok {
+		if len(dict.Values) != 2 {
+			t.Errorf("Expected 2 top-level keys, got %d", len(dict.Values))
+		}
+		if _, exists := dict.Values["\"com.apple.Safari\""]; !exists {
+			if _, exists := dict.Values["com.apple.Safari"]; !exists {
+				t.Error("Should contain Safari bundle ID in parsed value")
+			}
+		}
+		if _, exists := dict.Values["NSGlobalDomain"]; !exists {
+			t.Error("Should contain NSGlobalDomain in parsed value")
+		}
+	} else {
+		t.Error("Expected DictValue from convertDefaultsWithValue")
+	}
+}
+
+// TestSplitFunctionality_Integration tests the complete split workflow
+// including parsing, key extraction, and individual file content generation
+func TestSplitFunctionality_Integration(t *testing.T) {
+	// Test the main logic that would be used in split mode
+	input := `{
+    "com.apple.Safari" = {
+        HomePage = "https://example.com";
+        ExtensionsEnabled = 1;
+    };
+    NSGlobalDomain = {
+        AppleInterfaceStyle = Dark;
+        AppleLanguages = ("en-US", "en");
+    };
+    "Custom User Preferences" = {
+        MyCustomSetting = enabled;
+    };
+    loginwindow = {
+        LoginwindowText = Welcome;
+    };
+}`
+
+	_, value, err := convertDefaultsWithValue(input)
+	if err != nil {
+		t.Fatalf("convertDefaultsWithValue() error = %v", err)
+	}
+
+	bundleMap := extractBundleIDs(value)
+
+	expectedKeys := []string{"\"com.apple.Safari\"", "NSGlobalDomain", "\"Custom User Preferences\"", "loginwindow"}
+	alternateKeys := []string{"com.apple.Safari", "NSGlobalDomain", "Custom User Preferences", "loginwindow"}
+
+	if len(bundleMap) != len(expectedKeys) {
+		t.Errorf("Expected %d keys, got %d", len(expectedKeys), len(bundleMap))
+	}
+
+	for i, key := range expectedKeys {
+		if _, exists := bundleMap[key]; !exists {
+			if _, exists := bundleMap[alternateKeys[i]]; !exists {
+				t.Errorf("Expected key %s (or %s) not found in bundle map", key, alternateKeys[i])
+			}
+		}
+	}
+
+	// Test individual key content - check both quoted and unquoted versions
+	var safariValue Value
+	var safariExists bool
+	if safariValue, safariExists = bundleMap["\"com.apple.Safari\""]; !safariExists {
+		safariValue, safariExists = bundleMap["com.apple.Safari"]
+	}
+
+	if safariExists {
+		safariNix := safariValue.ToNix(0)
+		if !strings.Contains(safariNix, "HomePage = \"https://example.com\"") {
+			t.Error("Safari config should contain HomePage setting")
+		}
+		if !strings.Contains(safariNix, "ExtensionsEnabled = true") {
+			t.Error("Safari config should contain ExtensionsEnabled setting")
+		}
+	}
+
+	if globalValue, exists := bundleMap["NSGlobalDomain"]; exists {
+		globalNix := globalValue.ToNix(0)
+		if !strings.Contains(globalNix, "AppleInterfaceStyle = \"Dark\"") {
+			t.Error("NSGlobalDomain should contain AppleInterfaceStyle setting")
+		}
+		if !strings.Contains(globalNix, "AppleLanguages = [") {
+			t.Error("NSGlobalDomain should contain AppleLanguages array")
+		}
 	}
 }

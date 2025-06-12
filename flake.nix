@@ -8,15 +8,15 @@
       systems = ["x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin"];
       imports = [inputs.flake-parts.flakeModules.easyOverlay];
       perSystem = {pkgs, ...}: let
-        info = builtins.fromJSON (builtins.readFile ./nixpkg.json);
+        mod = builtins.fromJSON (builtins.readFile ./pkg.json);
         pkg =
           pkgs.buildGoModule
           {
             src = ./.;
-            pname = info.name;
-            meta.mainprogram = info.name;
-            version = info.version;
-            hash = info.bin-hash;
+            pname = mod.name;
+            meta.mainprogram = mod.name;
+            version = mod.version;
+            hash = mod.bin-hash;
             vendorHash = null;
           };
       in {

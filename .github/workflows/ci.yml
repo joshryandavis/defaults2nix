@@ -1,0 +1,82 @@
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v25
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Check flake
+        run: nix flake check
+
+      - name: Build
+        run: nix build
+
+  test-go:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.21"
+
+      - name: Run tests
+        run: go test -v
+
+      - name: Build
+        run: go build -o defaults2nix
+
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v25
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.21"
+
+      - name: Increment version
+        run: |
+          current_version=$(cat version.txt)
+          IFS='.' read -ra VERSION_PARTS <<< "$current_version"
+          patch_version=$((${VERSION_PARTS[2]} + 1))
+          new_version="${VERSION_PARTS[0]}.${VERSION_PARTS[1]}.$patch_version"
+          echo "$new_version" > version.txt
+
+      - name: Run update script
+        run: ./update.sh
+
+      - name: Commit changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add version.txt flake.lock pkg.json
+          new_version=$(cat version.txt)
+          git commit -m "ci: version $new_version" || exit 0
+          git push origin main
