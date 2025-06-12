@@ -50,6 +50,8 @@ func (s StringValue) ToNix(indent int) string {
 	// Escape and quote strings
 	escaped := strings.ReplaceAll(s.Value, "\\", "\\\\")
 	escaped = strings.ReplaceAll(escaped, "\"", "\\\"")
+	// Escape Nix string interpolation syntax ${...} → $''{...}
+	escaped = strings.ReplaceAll(escaped, "${", "$''{")
 	return fmt.Sprintf("\"%s\"", escaped)
 }
 
@@ -113,11 +115,26 @@ func (d DictValue) ToNix(indent int) string {
 
 		nixKey := key
 		// Quote keys that need it
+		needsQuoting := false
+
+		// Check if key is purely numeric
+		if _, err := strconv.Atoi(key); err == nil {
+			needsQuoting = true
+		}
+
+		// Check if key starts with a number
+		if len(key) > 0 && key[0] >= '0' && key[0] <= '9' {
+			needsQuoting = true
+		}
+
+		// Check for other characters that need quoting
 		if strings.Contains(key, " ") || strings.Contains(key, "-") ||
 			strings.Contains(key, ".") || strings.HasPrefix(key, "\"") {
-			if !strings.HasPrefix(key, "\"") {
-				nixKey = fmt.Sprintf("\"%s\"", strings.ReplaceAll(key, "\"", "\\\""))
-			}
+			needsQuoting = true
+		}
+
+		if needsQuoting && !strings.HasPrefix(key, "\"") {
+			nixKey = fmt.Sprintf("\"%s\"", strings.ReplaceAll(key, "\"", "\\\""))
 		}
 
 		valueStr := value.ToNix(indent + 1)
@@ -158,9 +175,13 @@ func parseValue(input string) Value {
 		return parseDict(input)
 	}
 
-	// Handle quoted strings - remove quotes
+	// Handle quoted strings - remove quotes and unescape
 	if strings.HasPrefix(input, "\"") && strings.HasSuffix(input, "\"") && len(input) > 1 {
-		return StringValue{Value: input[1 : len(input)-1]}
+		unescaped := input[1 : len(input)-1]
+		// Unescape the string content
+		unescaped = strings.ReplaceAll(unescaped, "\\\"", "\"")
+		unescaped = strings.ReplaceAll(unescaped, "\\\\", "\\")
+		return StringValue{Value: unescaped}
 	}
 
 	// Everything else is a string value
