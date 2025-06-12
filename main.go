@@ -127,6 +127,19 @@ func (d DictValue) ToNix(indent int) string {
 			needsQuoting = true
 		}
 
+		// Check if key is a Nix reserved keyword
+		nixKeywords := []string{
+			"with", "let", "in", "if", "then", "else", "assert", "rec",
+			"inherit", "or", "and", "import", "builtins", "throw", "abort",
+			"true", "false", "null",
+		}
+		for _, keyword := range nixKeywords {
+			if key == keyword {
+				needsQuoting = true
+				break
+			}
+		}
+
 		// Check for other characters that need quoting
 		if strings.Contains(key, " ") || strings.Contains(key, "-") ||
 			strings.Contains(key, ".") || strings.HasPrefix(key, "\"") {
