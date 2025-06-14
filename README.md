@@ -22,16 +22,48 @@ nix profile install github:joshryandavis/defaults2nix
 
 ## Usage
 
-### From file
+### Basic Usage
+
+#### From file
 ```bash
 defaults read com.apple.Safari > safari.plist
 defaults2nix safari.plist > safari.nix
 ```
 
-### From stdin
+#### From stdin
 ```bash
 defaults read com.apple.Safari | defaults2nix
 ```
+
+### Split Top-Level Keys
+
+You can split all top-level keys (bundle IDs, NSGlobalDomain, custom preferences, etc.) into individual files using the `-split` flag:
+
+#### Split from file
+```bash
+defaults export > all-defaults.plist
+defaults2nix -split -output ./configs all-defaults.plist
+```
+
+#### Split from stdin
+```bash
+defaults export | defaults2nix -split -output ./configs
+```
+
+This will create individual `.nix` files for each top-level key found in the input:
+- `com-apple-Safari.nix`
+- `com-google-Chrome.nix` 
+- `com-microsoft-VSCode.nix`
+- `NSGlobalDomain.nix`
+- `Custom_User_Preferences.nix`
+- `loginwindow.nix`
+- etc.
+
+### Command Line Options
+
+- `-split`: Split top-level keys into individual files
+- `-output <dir>`: Output directory for split files (default: current directory)
+- `-help`: Show usage information
 
 ## Input Format
 
@@ -83,14 +115,23 @@ The tool converts the input to Nix attribute set syntax:
 
 ## Common Use Cases
 
-### Safari Configuration
+### Single Application Configuration
 ```bash
 defaults read com.apple.Safari | defaults2nix
 ```
 
-### Finder Configuration
+### Multiple Applications and Global Settings (Split Mode)
 ```bash
-defaults read com.apple.finder | defaults2nix
+# Export all defaults for your user
+defaults export | defaults2nix -split -output ~/nix-configs
+
+# This creates individual files like:
+# ~/nix-configs/com-apple-Safari.nix
+# ~/nix-configs/com-apple-finder.nix
+# ~/nix-configs/com-apple-dock.nix
+# ~/nix-configs/NSGlobalDomain.nix
+# ~/nix-configs/loginwindow.nix
+# ~/nix-configs/Custom_User_Preferences.nix
 ```
 
 ### System Preferences

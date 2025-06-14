@@ -2,9 +2,11 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -404,11 +406,48 @@ func convertDefaults(input io.Reader) (string, error) {
 	return value.ToNix(0), nil
 }
 
+func convertDefaultsWithValue(inputStr string) (string, Value, error) {
+	value := parseValue(inputStr)
+	return value.ToNix(0), value, nil
+}
+
+func extractBundleIDs(value Value) map[string]Value {
+	bundleMap := make(map[string]Value)
+
+	if dict, ok := value.(DictValue); ok {
+		for key, val := range dict.Values {
+			// Skip binary data values
+			if _, isSkip := val.(SkipValue); isSkip {
+				continue
+			}
+			// Include all top-level keys - bundle IDs, NSGlobalDomain, and custom preferences
+			bundleMap[key] = val
+		}
+	}
+
+	return bundleMap
+}
+
+func sanitizeFilename(key string) string {
+	// Remove quotes if present
+	filename := strings.Trim(key, "\"")
+	// Replace dots with hyphens for filename safety
+	filename = strings.ReplaceAll(filename, ".", "-")
+	// Replace any other problematic characters
+	filename = strings.ReplaceAll(filename, " ", "_")
+	filename = strings.ReplaceAll(filename, "/", "_")
+	return filename
+}
+
 func main() {
+	var splitBundles = flag.Bool("split", false, "Split top-level keys into individual files")
+	var outputDir = flag.String("output", ".", "Output directory for split files")
+	flag.Parse()
+
 	var input io.Reader = os.Stdin
 
-	if len(os.Args) > 1 {
-		file, err := os.Open(os.Args[1])
+	if flag.NArg() > 0 {
+		file, err := os.Open(flag.Arg(0))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error opening file: %v\n", err)
 			os.Exit(1)
@@ -417,11 +456,65 @@ func main() {
 		input = file
 	}
 
-	result, err := convertDefaults(input)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error converting defaults: %v\n", err)
+	// Read all input data once
+	scanner := bufio.NewScanner(input)
+	var content strings.Builder
+
+	for scanner.Scan() {
+		content.WriteString(scanner.Text() + "\n")
+	}
+
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Println(result)
+	inputStr := strings.TrimSpace(content.String())
+
+	if *splitBundles {
+		// Parse the input to extract the original structure
+		_, value, err := convertDefaultsWithValue(inputStr)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing input: %v\n", err)
+			os.Exit(1)
+		}
+
+		bundleMap := extractBundleIDs(value)
+
+		if len(bundleMap) == 0 {
+			fmt.Fprintf(os.Stderr, "No top-level keys found in input\n")
+			os.Exit(1)
+		}
+
+		// Create output directory if it doesn't exist
+		if err := os.MkdirAll(*outputDir, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating output directory: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Write each top-level key to its own file
+		for key, keyValue := range bundleMap {
+			filename := sanitizeFilename(key) + ".nix"
+			filepath := filepath.Join(*outputDir, filename)
+
+			file, err := os.Create(filepath)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error creating file %s: %v\n", filepath, err)
+				continue
+			}
+
+			nixContent := keyValue.ToNix(0)
+			if _, err := file.WriteString(nixContent); err != nil {
+				fmt.Fprintf(os.Stderr, "Error writing to file %s: %v\n", filepath, err)
+			}
+
+			file.Close()
+			fmt.Printf("Created %s\n", filepath)
+		}
+	} else {
+		// Convert and output normally
+		value := parseValue(inputStr)
+		result := value.ToNix(0)
+		fmt.Println(result)
+	}
 }

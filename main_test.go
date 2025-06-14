@@ -615,3 +615,213 @@ func TestIntegration_SafariComplexFile(t *testing.T) {
 		t.Error("Should skip binary data completely")
 	}
 }
+
+// TestExtractBundleIDs tests the extraction of all top-level keys from parsed values,
+// including bundle IDs, NSGlobalDomain, and custom preference domains
+func TestExtractBundleIDs(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    Value
+		expected []string
+	}{
+		{
+			"Bundle IDs and global domains",
+			DictValue{
+				Values: map[string]Value{
+					"com.apple.Safari":        StringValue{Value: "test"},
+					"com.google.Chrome":       StringValue{Value: "test"},
+					"NSGlobalDomain":          StringValue{Value: "test"},
+					"Custom User Preferences": StringValue{Value: "test"},
+					"loginwindow":             StringValue{Value: "test"},
+					"Apple Global Domain":     StringValue{Value: "test"},
+				},
+				Order: []string{"com.apple.Safari", "com.google.Chrome", "NSGlobalDomain", "Custom User Preferences", "loginwindow", "Apple Global Domain"},
+			},
+			[]string{"com.apple.Safari", "com.google.Chrome", "NSGlobalDomain", "Custom User Preferences", "loginwindow", "Apple Global Domain"},
+		},
+		{
+			"Empty dictionary",
+			DictValue{
+				Values: map[string]Value{},
+				Order:  []string{},
+			},
+			[]string{},
+		},
+		{
+			"Skip binary data",
+			DictValue{
+				Values: map[string]Value{
+					"com.apple.Safari": StringValue{Value: "test"},
+					"binaryData":       SkipValue{},
+					"NSGlobalDomain":   StringValue{Value: "test"},
+				},
+				Order: []string{"com.apple.Safari", "binaryData", "NSGlobalDomain"},
+			},
+			[]string{"com.apple.Safari", "NSGlobalDomain"},
+		},
+		{
+			"Non-dictionary value",
+			StringValue{Value: "not a dict"},
+			[]string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractBundleIDs(tt.input)
+
+			if len(result) != len(tt.expected) {
+				t.Errorf("extractBundleIDs() returned %d keys, want %d", len(result), len(tt.expected))
+			}
+
+			for _, expectedKey := range tt.expected {
+				if _, exists := result[expectedKey]; !exists {
+					t.Errorf("extractBundleIDs() missing expected key: %s", expectedKey)
+				}
+			}
+		})
+	}
+}
+
+// TestSanitizeFilename tests the conversion of domain keys to safe filenames
+// by replacing dots, spaces, and other problematic characters
+func TestSanitizeFilename(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"Bundle ID with dots", "com.apple.Safari", "com-apple-Safari"},
+		{"Quoted bundle ID", "\"com.google.Chrome\"", "com-google-Chrome"},
+		{"NSGlobalDomain", "NSGlobalDomain", "NSGlobalDomain"},
+		{"Space in name", "Custom User Preferences", "Custom_User_Preferences"},
+		{"Mixed characters", "Apple Global Domain", "Apple_Global_Domain"},
+		{"Forward slash", "path/to/something", "path_to_something"},
+		{"Complex name", "\"Extension Config v2\"", "Extension_Config_v2"},
+		{"loginwindow", "loginwindow", "loginwindow"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizeFilename(tt.input)
+			if result != tt.expected {
+				t.Errorf("sanitizeFilename(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestConvertDefaultsWithValue tests the new function that returns both
+// the Nix output string and the parsed Value structure for split functionality
+func TestConvertDefaultsWithValue(t *testing.T) {
+	input := `{
+    "com.apple.Safari" = {
+        HomePage = "https://example.com";
+        ExtensionsEnabled = 1;
+    };
+    NSGlobalDomain = {
+        AppleInterfaceStyle = Dark;
+    };
+}`
+
+	nixOutput, value, err := convertDefaultsWithValue(input)
+	if err != nil {
+		t.Fatalf("convertDefaultsWithValue() error = %v", err)
+	}
+
+	// Test Nix output
+	if !strings.Contains(nixOutput, "com.apple.Safari") {
+		t.Error("Nix output should contain Safari bundle ID")
+	}
+	if !strings.Contains(nixOutput, "NSGlobalDomain") {
+		t.Error("Nix output should contain NSGlobalDomain")
+	}
+
+	// Test returned value structure
+	if dict, ok := value.(DictValue); ok {
+		if len(dict.Values) != 2 {
+			t.Errorf("Expected 2 top-level keys, got %d", len(dict.Values))
+		}
+		if _, exists := dict.Values["\"com.apple.Safari\""]; !exists {
+			if _, exists := dict.Values["com.apple.Safari"]; !exists {
+				t.Error("Should contain Safari bundle ID in parsed value")
+			}
+		}
+		if _, exists := dict.Values["NSGlobalDomain"]; !exists {
+			t.Error("Should contain NSGlobalDomain in parsed value")
+		}
+	} else {
+		t.Error("Expected DictValue from convertDefaultsWithValue")
+	}
+}
+
+// TestSplitFunctionality_Integration tests the complete split workflow
+// including parsing, key extraction, and individual file content generation
+func TestSplitFunctionality_Integration(t *testing.T) {
+	// Test the main logic that would be used in split mode
+	input := `{
+    "com.apple.Safari" = {
+        HomePage = "https://example.com";
+        ExtensionsEnabled = 1;
+    };
+    NSGlobalDomain = {
+        AppleInterfaceStyle = Dark;
+        AppleLanguages = ("en-US", "en");
+    };
+    "Custom User Preferences" = {
+        MyCustomSetting = enabled;
+    };
+    loginwindow = {
+        LoginwindowText = Welcome;
+    };
+}`
+
+	_, value, err := convertDefaultsWithValue(input)
+	if err != nil {
+		t.Fatalf("convertDefaultsWithValue() error = %v", err)
+	}
+
+	bundleMap := extractBundleIDs(value)
+
+	expectedKeys := []string{"\"com.apple.Safari\"", "NSGlobalDomain", "\"Custom User Preferences\"", "loginwindow"}
+	alternateKeys := []string{"com.apple.Safari", "NSGlobalDomain", "Custom User Preferences", "loginwindow"}
+
+	if len(bundleMap) != len(expectedKeys) {
+		t.Errorf("Expected %d keys, got %d", len(expectedKeys), len(bundleMap))
+	}
+
+	for i, key := range expectedKeys {
+		if _, exists := bundleMap[key]; !exists {
+			if _, exists := bundleMap[alternateKeys[i]]; !exists {
+				t.Errorf("Expected key %s (or %s) not found in bundle map", key, alternateKeys[i])
+			}
+		}
+	}
+
+	// Test individual key content - check both quoted and unquoted versions
+	var safariValue Value
+	var safariExists bool
+	if safariValue, safariExists = bundleMap["\"com.apple.Safari\""]; !safariExists {
+		safariValue, safariExists = bundleMap["com.apple.Safari"]
+	}
+
+	if safariExists {
+		safariNix := safariValue.ToNix(0)
+		if !strings.Contains(safariNix, "HomePage = \"https://example.com\"") {
+			t.Error("Safari config should contain HomePage setting")
+		}
+		if !strings.Contains(safariNix, "ExtensionsEnabled = true") {
+			t.Error("Safari config should contain ExtensionsEnabled setting")
+		}
+	}
+
+	if globalValue, exists := bundleMap["NSGlobalDomain"]; exists {
+		globalNix := globalValue.ToNix(0)
+		if !strings.Contains(globalNix, "AppleInterfaceStyle = \"Dark\"") {
+			t.Error("NSGlobalDomain should contain AppleInterfaceStyle setting")
+		}
+		if !strings.Contains(globalNix, "AppleLanguages = [") {
+			t.Error("NSGlobalDomain should contain AppleLanguages array")
+		}
+	}
+}

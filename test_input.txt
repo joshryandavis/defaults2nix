@@ -1,0 +1,41 @@
+{
+  "com.apple.Safari" = {
+    "ShowFullURLInSmartSearchField" = 1;
+    "IncludeInternalDebugMenu" = 0;
+    "WebKitDefaultTextEncodingName" = "utf-8";
+    "HomePage" = "https://example.com";
+  };
+  "com.google.Chrome" = {
+    "AppleEnableSwipeNavigateWithScrolls" = 1;
+    "DisablePrintPreview" = 1;
+    "PMPrintingExpandedStateForPrint2" = 1;
+  };
+  "com.microsoft.VSCode" = {
+    "ApplePressAndHoldEnabled" = 0;
+    "LSUIElement" = 1;
+  };
+  "NSGlobalDomain" = {
+    "AppleShowAllExtensions" = 1;
+    "NSDocumentSaveNewDocumentsToCloud" = 0;
+    "AppleInterfaceStyle" = "Dark";
+    "AppleLanguages" = ("en-US", "en");
+  };
+  "com.apple.dock" = {
+    "autohide" = 1;
+    "tilesize" = 48;
+    "orientation" = "bottom";
+    "show-recents" = 0;
+  };
+  "Custom User Preferences" = {
+    "MyCustomSetting" = "enabled";
+    "UserDefinedValue" = 42;
+  };
+  "Apple Global Domain" = {
+    "AppleLocale" = "en_US";
+    "AppleMeasurementUnits" = "Inches";
+  };
+  "loginwindow" = {
+    "LoginwindowText" = "Welcome to macOS";
+    "SHOWFULLNAME" = 1;
+  };
+}
