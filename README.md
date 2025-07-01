@@ -158,7 +158,6 @@ The tool processes the standard output format from macOS `defaults read` command
         },
         "Simple String Item"
     );
-    BinaryData = {length = 256, bytes = 0x89504e47 0d0a1a0a};
 }
 ```
 
