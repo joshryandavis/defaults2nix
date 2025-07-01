@@ -1,5 +1,5 @@
 {
   "name": "defaults2nix",
-  "version": "0.1.5",
-  "bin-hash": "sha256-v3CheyqHUDan5n73daxPHjB0Uyc0libYuy4GuiL+ZIc="
+  "version": "0.1.6",
+  "bin-hash": "sha256-Hr0Jszc9SSHxYdbSPKeA2VVBcR2E4dLxixCH76xrsbU="
 }
