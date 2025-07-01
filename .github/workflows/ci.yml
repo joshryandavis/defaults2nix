@@ -33,7 +33,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: "1.21"
+          go-version: "1.24"
 
       - name: Run tests
         run: go test -v
@@ -43,6 +43,7 @@ jobs:
 
   release:
     runs-on: ubuntu-latest
+    needs: [test, test-go]
     permissions:
       contents: write
     steps:
@@ -59,7 +60,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: "1.21"
+          go-version: "1.24"
 
       - name: Increment version
         run: |

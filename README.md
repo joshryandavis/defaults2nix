@@ -129,8 +129,6 @@ sudo defaults export | defaults2nix -split -output ./configs
 
 This will create individual `.nix` files for each top-level key found in the input:
 - `com-apple-Safari.nix`
-- `com-google-Chrome.nix`
-- `com-microsoft-VSCode.nix`
 - `NSGlobalDomain.nix`
 - `Custom_User_Preferences.nix`
 - `loginwindow.nix`
@@ -281,46 +279,6 @@ sudo defaults2nix -split -o ./my-macos-config/
   targets.darwin.defaults = {
     "com.apple.Safari" = import ./defaults/com.apple.Safari.nix;
     "com.apple.finder" = import ./defaults/com.apple.finder.nix;
-  };
-}
-```
-
-## Advanced Features
-
-### Binary Data Filtering
-
-The tool automatically detects and skips binary data entries that follow the pattern:
-```
-{length = N; bytes = 0x...}
-```
-
-These entries are not useful in declarative configurations and are safely omitted.
-
-### Nested Structure Preservation
-
-Complex nested structures are fully supported:
-
-```bash
-# Input
-{
-    Level1 = {
-        Level2 = {
-            Level3 = "deep value";
-            Array = (item1, item2);
-        };
-    };
-}
-
-# Output
-{
-  Level1 = {
-    Level2 = {
-      Level3 = "deep value";
-      Array = [
-        "item1"
-        "item2"
-      ];
-    };
   };
 }
 ```
