@@ -11,6 +11,7 @@ This tool makes it easy to convert macOS system preferences and application sett
 - Automatic binary data filtering (skips non-useful binary entries)
 - Proper string escaping and quoting
 - Preserve nested structures and key ordering
+- Flexible filtering with `-filter` flag (dates, state, uuids)
 
 ## Installation
 
@@ -94,9 +95,10 @@ Usage: defaults2nix [flags] [domain]
 A tool for converting macOS defaults into Nix templates.
 
 Flags:
-  -all      Process all defaults from `defaults read`
-  -split    Split defaults into individual Nix files by domain
-  -o, -out  Output file or directory path
+  -all       Process all defaults from `defaults read`
+  -filter    Comma-separated list of items to filter out (dates,state,uuids)
+  -split     Split defaults into individual Nix files by domain
+  -o, -out   Output file or directory path
 
 Arguments:
   domain     The domain to convert (e.g., com.apple.dock)
@@ -105,40 +107,75 @@ Examples:
   defaults2nix com.apple.Safari
   defaults2nix com.apple.Safari -o safari.nix
   defaults2nix -all -o all-defaults.nix
+  defaults2nix -all -filter dates -o all-defaults.nix
+  defaults2nix -all -filter state,uuids -o all-defaults.nix
   defaults2nix -split -o ./configs/
   sudo defaults2nix -all -o all-defaults.nix  # for system configs
 ```
 
-### Split Top-Level Keys
+### Filtering Options
 
-You can split all top-level keys (bundle IDs, NSGlobalDomain, custom preferences, etc.) into individual files using the `-split` flag:
+The `-filter` flag accepts a comma-separated list of items to filter out from the output:
 
-#### Split from file
 ```bash
-defaults export > all-defaults.plist
-defaults2nix -split -output ./configs all-defaults.plist
+# Filter out date values
+defaults2nix com.apple.Safari -filter dates -o safari.nix
+
+# Filter out UI state and UUIDs
+defaults2nix -all -filter state,uuids -o clean-defaults.nix
+
+# Filter out all supported types
+defaults2nix -all -filter dates,state,uuids -o minimal-defaults.nix
+
+# Works with split mode too
+defaults2nix -split -filter dates,state -o ./configs/
 ```
 
-#### Split from stdin
-```bash
-defaults export | defaults2nix -split -output ./configs
+> **⚠️ Warning**: The filtering mechanisms are based on heuristics and pattern matching, which means they may occasionally:
+> - Filter out legitimate configuration values that happen to look like timestamps, UUIDs, or UI state
+> - Miss some values that should be filtered if they don't match expected patterns
+> - Be overly aggressive with timestamp filtering based on key names
+> 
+> Always review the filtered output to ensure important settings haven't been inadvertently removed. These filters are intended as a convenience for creating cleaner configurations, not as a precise data classification system.
 
-# For system-level preferences
-sudo defaults export | defaults2nix -split -output ./configs
+#### Available Filters:
+
+- **dates**: Omits timestamp values
+  - String dates: `2025-06-07 12:01:44 +0000`, `2025-06-07T12:01:44Z`, `2025-06-07`
+  - Unix timestamps: Integer values in timestamp-related keys (e.g., `CKStartupTime = 1753218075`)
+  - CFAbsoluteTime: Floating-point values in timestamp-related keys (e.g., `lastConnected@Display:2 = 774728050.470133`)
+  - Detects timestamps based on key names containing: time, date, timestamp, created, modified, updated, etc.
+
+- **state**: Omits UI state and window geometry
+  - Window frame positions and sizes
+  - Split view configurations
+  - Toolbar customizations
+  - Table view settings
+
+- **uuids**: Omits UUID keys and values
+  - Standard UUIDs: `A8604994-4D31-471E-B7F1-D60AC97A287C`
+  - Hashed identifiers: `_19a3bc4999bddb89e1a44f4b87bdc37c` (underscore + 32 hex chars)
+  - Keys containing UUID patterns
+  - Helps create more reproducible configurations
+
+### Split Domains into Separate Files
+
+The `-split` flag processes all available domains and creates individual `.nix` files for each:
+
+```bash
+# Creates separate files for each domain in the specified directory
+defaults2nix -split -out ./configs/
+
+# For complete coverage including system-level configs
+sudo defaults2nix -split -out ./configs/
 ```
 
-This will create individual `.nix` files for each top-level key found in the input:
-- `com-apple-Safari.nix`
+This will create individual `.nix` files for each domain found:
+- `com.apple.Safari.nix`
+- `com.apple.finder.nix` 
 - `NSGlobalDomain.nix`
-- `Custom_User_Preferences.nix`
 - `loginwindow.nix`
 - etc.
-
-### Command Line Options
-
-- `-split`: Split top-level keys into individual files
-- `-output <dir>`: Output directory for split files (default: current directory)
-- `-help`: Show usage information
 
 ## Input Format
 
@@ -196,6 +233,9 @@ Converts to clean Nix attribute set syntax:
 | `(item1, item2)` | `[item1 item2]` | Arrays to lists |
 | `{key = value;}` | `{key = value;}` | Dictionaries to attribute sets |
 | `{length = N; bytes = 0x...}` | *skipped* | Binary data filtered out |
+| `"2025-06-07 12:01:44 +0000"` | *skipped with -filter dates* | Date values can be filtered |
+| `"A8604994-4D31-471E-B7F1-D60AC97A287C"` | *skipped with -filter uuids* | UUID values can be filtered |
+| `NSWindow Frame ...` | *skipped with -filter state* | UI state can be filtered |
 
 ## Key Handling
 
