@@ -1027,7 +1027,7 @@ func main() {
 			}
 
 			// Write to file
-			filename := filepath.Join(*out, fmt.Sprintf("%s.nix", domain))
+            filename := filepath.Join(*out, fmt.Sprintf("%s.nix", sanitizeFilename(domain)))
 			err = os.WriteFile(filename, []byte(nixResult), 0644)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: Failed to write %s: %v\n", filename, err)
