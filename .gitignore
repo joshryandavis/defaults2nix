@@ -33,5 +33,8 @@ go.work.sum
 
 output.nix
 
+# Built binaries
+defaults2nix
+
 result/
 tmp/
