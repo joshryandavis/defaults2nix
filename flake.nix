@@ -18,6 +18,7 @@
             version = mod.version;
             hash = mod.bin-hash;
             vendorHash = null;
+            doCheck = false;
           };
       in {
         packages = {
