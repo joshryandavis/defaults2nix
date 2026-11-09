@@ -1,0 +1,30 @@
+{
+    "appswitcher-all-displays" = 1;
+    autohide = 0;
+    "autohide-delay" = "0.1";
+    "last-analytics-stamp" =     (
+        "815908294.6578341"
+    );
+    "persistent-apps" =     (
+                {
+            GUID = 3434515834;
+            "tile-data" =             {
+                book = {length = 524, bytes = 0x626f6f6b 0c020000 ... 04000000 };
+                "bundle-identifier" = "com.apple.ScreenContinuity";
+                "file-data" =                 {
+                    "_CFURLString" = "file:///System/Applications/iPhone%20Mirroring.app/";
+                };
+                "file-label" = "caf\U00e9 \Ud834\Udd1e";
+            };
+            "tile-type" = "file-tile";
+        }
+    );
+    "NSWindow Frame Dock" = "0 0 1920 1080 0 0 1920 1080 ";
+    loc = "en_GB:GB";
+    "mru-spaces" = 0;
+    "UpdateDate" = "2026-11-06 14:42:34 +0000";
+    "DeviceUUID" = "A8604994-4D31-471E-B7F1-D60AC97A287C";
+    "escapes" = "a\"b\\c${HOME}d";
+    "f_big" = "1e+20";
+    "i_big" = 9223372036854775807;
+}

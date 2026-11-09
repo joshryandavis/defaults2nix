@@ -6,25 +6,23 @@
   outputs = inputs @ {flake-parts, ...}:
     flake-parts.lib.mkFlake {inherit inputs;} ({...}: {
       systems = ["x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin"];
-      imports = [inputs.flake-parts.flakeModules.easyOverlay];
       perSystem = {pkgs, ...}: let
-        mod = builtins.fromJSON (builtins.readFile ./pkg.json);
-        pkg =
-          pkgs.buildGoModule
-          {
-            src = ./.;
-            pname = mod.name;
-            meta.mainprogram = mod.name;
-            version = mod.version;
-            hash = mod.bin-hash;
-            vendorHash = null;
-            doCheck = false;
+        pkg = pkgs.buildGoModule {
+          src = ./.;
+          pname = "defaults2nix";
+          version = pkgs.lib.trim (builtins.readFile ./version.txt);
+          vendorHash = null;
+          doCheck = true;
+          meta = {
+            description = "Convert macOS defaults to Nix";
+            license = pkgs.lib.licenses.mit;
+            mainProgram = "defaults2nix";
           };
-      in {
-        packages = {
-          default = pkg;
         };
+      in {
+        packages.default = pkg;
         devShells.default = pkgs.mkShell {
+          inputsFrom = [pkg];
           packages = [pkg];
         };
       };

@@ -36,5 +36,5 @@ output.nix
 # Built binaries
 defaults2nix
 
-result/
+/result
 tmp/
